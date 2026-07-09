@@ -1,0 +1,132 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Collection Checklist</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <main class="app-shell">
+      <header class="hero">
+        <h1>Collection Checklist</h1>
+        <p>Offline tracker for your local collection images and names.</p>
+      </header>
+
+      <section class="panel controls">
+        <div class="control-block">
+          <div class="block-heading">
+            <h2>Collection Source</h2>
+            <p>Bring in your names and images, then generate the checklist grid.</p>
+          </div>
+
+          <div class="field-group">
+            <label for="namesInput">Names list</label>
+            <textarea
+              id="namesInput"
+              rows="6"
+              placeholder="One item name per line, or CSV-like values where the first value is used as name."
+            ></textarea>
+            <div class="row file-row">
+              <label class="compact" for="namesFile">Load names file</label>
+              <input id="namesFile" type="file" accept=".txt,.csv,text/plain,text/csv" />
+            </div>
+          </div>
+
+          <div class="field-group">
+            <label for="imagesInput">Images</label>
+            <input id="imagesInput" type="file" accept="image/*" multiple />
+            <p class="hint">
+              Matching rule: filename (without extension) to item name. Remaining images are assigned by order.
+            </p>
+            <label class="compact checkbox persist-toggle">
+              <input id="indexedDbMode" type="checkbox" checked />
+              IndexedDB mode (persist names, progress, and images)
+            </label>
+          </div>
+
+          <div class="action-group">
+            <div class="action-group-title">Checklist Actions</div>
+            <div class="row actions action-grid">
+              <button id="buildBtn" type="button" class="tone-build">Build checklist</button>
+              <button id="clearBtn" type="button" class="tone-neutral">Clear</button>
+              <button id="resetProgressBtn" type="button" class="tone-warn">Reset progress</button>
+              <button id="deleteSavedBtn" type="button" class="tone-danger">Delete saved data</button>
+              <button id="exportProgressBtn" type="button" class="tone-sync">Export progress</button>
+              <label class="button tone-sync" for="importProgressInput">Import progress</label>
+              <input id="importProgressInput" type="file" accept="application/json" hidden />
+            </div>
+          </div>
+        </div>
+
+        <div class="control-block sync-block">
+          <div class="block-heading">
+            <h2>Cloud Sync</h2>
+            <p>Optional manual sync using Supabase. Local tracking still works without it.</p>
+          </div>
+
+          <div class="field-group">
+            <div id="supabaseConfigSection" class="field-group">
+              <label for="supabaseUrlInput">Supabase project URL (optional sync)</label>
+              <input
+                id="supabaseUrlInput"
+                type="text"
+                placeholder="https://YOUR_PROJECT_ID.supabase.co"
+              />
+              <label for="supabaseAnonKeyInput">Supabase anon key</label>
+              <input id="supabaseAnonKeyInput" type="text" placeholder="Paste your public anon key" />
+              <label for="supabaseSyncKeyInput">Sync key</label>
+              <input
+                id="supabaseSyncKeyInput"
+                type="text"
+                placeholder="Any long unique key you choose"
+              />
+            </div>
+            <div id="supabaseAuthSection" class="field-group">
+              <label for="supabaseEmailInput">Supabase email</label>
+              <input id="supabaseEmailInput" type="email" placeholder="you@example.com" />
+              <label for="supabasePasswordInput">Supabase password</label>
+              <input id="supabasePasswordInput" type="password" placeholder="Account password" />
+              <p class="hint">
+                Manual sync only. Nothing is uploaded unless you click Push to Supabase.
+              </p>
+              <div class="row actions action-grid auth-grid">
+                <button id="signUpSupabaseBtn" type="button" class="tone-auth-alt">Sign up</button>
+                <button id="signInSupabaseBtn" type="button" class="tone-auth">Sign in</button>
+              </div>
+            </div>
+            <div id="supabaseConnectedSection" class="field-group hidden-section">
+              <div class="action-group-title">Connected Actions</div>
+              <div class="row actions action-grid sync-action-grid">
+                <button id="connectSupabaseBtn" type="button" class="tone-connect">Connect Supabase</button>
+                <button id="pushSupabaseBtn" type="button" class="tone-sync">Push to Supabase</button>
+                <button id="pullSupabaseBtn" type="button" class="tone-sync-alt">Pull from Supabase</button>
+                <button id="signOutSupabaseBtn" type="button" class="tone-neutral">Sign out</button>
+                <button id="disconnectSupabaseBtn" type="button" class="tone-danger">Disconnect Supabase</button>
+              </div>
+            </div>
+            <div class="status-stack">
+              <div class="hint" id="supabaseAuthStatusText">Supabase auth: signed out.</div>
+              <div class="hint" id="supabaseStatusText">Supabase sync is disconnected.</div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="panel status-and-filter">
+        <div class="status" id="statusText">No checklist loaded.</div>
+        <div class="row filter-row">
+          <input id="searchInput" type="search" placeholder="Search by name" />
+          <label class="compact checkbox filter-toggle">
+            <input id="missingOnly" type="checkbox" />
+            Show missing only
+          </label>
+        </div>
+      </section>
+
+      <section class="grid" id="grid"></section>
+    </main>
+
+    <script src="app.js"></script>
+  </body>
+</html>
