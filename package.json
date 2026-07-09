@@ -1,0 +1,14 @@
+{
+    "name": "checklists",
+    "version": "1.0.0",
+    "private": true,
+    "description": "Offline collection checklist web app",
+    "scripts": {
+        "build": "node build.mjs",
+        "typecheck": "tsc --noEmit"
+    },
+    "devDependencies": {
+        "esbuild": "^0.25.8",
+        "typescript": "^5.9.2"
+    }
+}

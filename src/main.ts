@@ -1,0 +1,1215 @@
+type Item = {
+  id: string;
+  name: string;
+  imageUrl: string | null;
+  imageBlob: Blob | null;
+  imageFileName: string | null;
+};
+
+type ProgressFile = {
+  version: 1;
+  names: string[];
+  checkedByName: Record<string, boolean>;
+  exportedAt: string;
+};
+
+type PersistedItem = {
+  id: string;
+  name: string;
+  imageBlob: Blob | null;
+  imageFileName: string | null;
+};
+
+type PersistedSnapshot = {
+  version: 1;
+  namesText: string;
+  items: PersistedItem[];
+  checkedById: Record<string, boolean>;
+  searchQuery: string;
+  missingOnly: boolean;
+  savedAt: string;
+};
+
+type SyncPayload = {
+  version: 1;
+  savedAt: string;
+  names: string[];
+  checkedByNormalizedName: Record<string, boolean>;
+};
+
+type SupabaseConfig = {
+  url: string;
+  anonKey: string;
+  syncKey: string;
+};
+
+type SupabaseAuthResponse = {
+  access_token: string;
+  refresh_token: string;
+  user?: {
+    id: string;
+    email?: string;
+  };
+};
+
+type SupabaseUserResponse = {
+  id: string;
+  email?: string;
+};
+
+const namesInput = document.querySelector<HTMLTextAreaElement>("#namesInput")!;
+const namesFile = document.querySelector<HTMLInputElement>("#namesFile")!;
+const imagesInput = document.querySelector<HTMLInputElement>("#imagesInput")!;
+const buildBtn = document.querySelector<HTMLButtonElement>("#buildBtn")!;
+const clearBtn = document.querySelector<HTMLButtonElement>("#clearBtn")!;
+const resetProgressBtn = document.querySelector<HTMLButtonElement>("#resetProgressBtn")!;
+const deleteSavedBtn = document.querySelector<HTMLButtonElement>("#deleteSavedBtn")!;
+const exportProgressBtn = document.querySelector<HTMLButtonElement>("#exportProgressBtn")!;
+const importProgressInput = document.querySelector<HTMLInputElement>("#importProgressInput")!;
+const indexedDbMode = document.querySelector<HTMLInputElement>("#indexedDbMode")!;
+const supabaseConfigSection = document.querySelector<HTMLDivElement>("#supabaseConfigSection")!;
+const supabaseAuthSection = document.querySelector<HTMLDivElement>("#supabaseAuthSection")!;
+const supabaseConnectedSection = document.querySelector<HTMLDivElement>("#supabaseConnectedSection")!;
+const supabaseUrlInput = document.querySelector<HTMLInputElement>("#supabaseUrlInput")!;
+const supabaseAnonKeyInput = document.querySelector<HTMLInputElement>("#supabaseAnonKeyInput")!;
+const supabaseSyncKeyInput = document.querySelector<HTMLInputElement>("#supabaseSyncKeyInput")!;
+const supabaseEmailInput = document.querySelector<HTMLInputElement>("#supabaseEmailInput")!;
+const supabasePasswordInput = document.querySelector<HTMLInputElement>("#supabasePasswordInput")!;
+const signUpSupabaseBtn = document.querySelector<HTMLButtonElement>("#signUpSupabaseBtn")!;
+const signInSupabaseBtn = document.querySelector<HTMLButtonElement>("#signInSupabaseBtn")!;
+const signOutSupabaseBtn = document.querySelector<HTMLButtonElement>("#signOutSupabaseBtn")!;
+const connectSupabaseBtn = document.querySelector<HTMLButtonElement>("#connectSupabaseBtn")!;
+const pushSupabaseBtn = document.querySelector<HTMLButtonElement>("#pushSupabaseBtn")!;
+const pullSupabaseBtn = document.querySelector<HTMLButtonElement>("#pullSupabaseBtn")!;
+const disconnectSupabaseBtn = document.querySelector<HTMLButtonElement>("#disconnectSupabaseBtn")!;
+const supabaseAuthStatusText = document.querySelector<HTMLDivElement>("#supabaseAuthStatusText")!;
+const supabaseStatusText = document.querySelector<HTMLDivElement>("#supabaseStatusText")!;
+const searchInput = document.querySelector<HTMLInputElement>("#searchInput")!;
+const missingOnly = document.querySelector<HTMLInputElement>("#missingOnly")!;
+const statusText = document.querySelector<HTMLDivElement>("#statusText")!;
+const grid = document.querySelector<HTMLDivElement>("#grid")!;
+
+let items: Item[] = [];
+let checkedById: Record<string, boolean> = {};
+let storageKey = "";
+let activeImageUrls: string[] = [];
+let persistTimer: number | null = null;
+let supabaseConnected = false;
+let supabaseAccessToken = "";
+let supabaseRefreshToken = "";
+let supabaseUserId = "";
+let supabaseUserEmail = "";
+
+const STORAGE_PREFIX = "collection-checklist:v1:";
+const DB_NAME = "collection-checklist-db";
+const DB_VERSION = 1;
+const DB_STORE = "snapshots";
+const DB_LATEST_KEY = "latest";
+const PERSIST_DEBOUNCE_MS = 220;
+const SUPABASE_TABLE = "checklist_sync";
+const SUPABASE_URL_KEY = "collection-checklist:supabase-url";
+const SUPABASE_ANON_KEY = "collection-checklist:supabase-anon-key";
+const SUPABASE_SYNC_KEY = "collection-checklist:supabase-sync-key";
+const SUPABASE_EMAIL_KEY = "collection-checklist:supabase-email";
+
+function normalizeText(input: string): string {
+  return input
+    .toLowerCase()
+    .trim()
+    .replace(/\.[a-z0-9]+$/i, "")
+    .replace(/[^a-z0-9]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function hashText(input: string): string {
+  let hash = 2166136261;
+  for (let i = 0; i < input.length; i += 1) {
+    hash ^= input.charCodeAt(i);
+    hash = Math.imul(hash, 16777619);
+  }
+  return (hash >>> 0).toString(16);
+}
+
+function parseNames(raw: string): string[] {
+  const rows = raw
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+
+  const parsed = rows
+    .map((line) => {
+      if (!line.includes(",")) {
+        return line;
+      }
+      const firstCell = line.split(",")[0] ?? "";
+      return firstCell.replace(/^"|"$/g, "").trim();
+    })
+    .filter(Boolean);
+
+  const seen = new Set<string>();
+  const unique: string[] = [];
+  for (const name of parsed) {
+    const key = normalizeText(name);
+    if (!key || seen.has(key)) {
+      continue;
+    }
+    seen.add(key);
+    unique.push(name);
+  }
+
+  return unique;
+}
+
+function revokeImageUrls(): void {
+  for (const url of activeImageUrls) {
+    URL.revokeObjectURL(url);
+  }
+  activeImageUrls = [];
+}
+
+function readCheckedFromStorage(key: string): Record<string, boolean> {
+  const raw = localStorage.getItem(key);
+  if (!raw) {
+    return {};
+  }
+
+  try {
+    const parsed = JSON.parse(raw) as Record<string, boolean>;
+    return parsed;
+  } catch {
+    return {};
+  }
+}
+
+function writeCheckedToStorage(): void {
+  if (!storageKey) {
+    return;
+  }
+  localStorage.setItem(storageKey, JSON.stringify(checkedById));
+}
+
+function setSupabaseStatus(message: string): void {
+  supabaseStatusText.textContent = message;
+}
+
+function setSupabaseAuthStatus(message: string): void {
+  supabaseAuthStatusText.textContent = message;
+}
+
+function updateSupabaseUi(): void {
+  const isAuthenticated = Boolean(supabaseAccessToken && supabaseUserId);
+  const isConnected = supabaseConnected;
+
+  supabaseConfigSection.classList.toggle("hidden-section", isConnected);
+  supabaseAuthSection.classList.toggle("hidden-section", isAuthenticated);
+  supabaseConnectedSection.classList.toggle("hidden-section", !isAuthenticated);
+
+  connectSupabaseBtn.classList.toggle("hidden-section", isConnected);
+  pushSupabaseBtn.classList.toggle("hidden-section", !isConnected);
+  pullSupabaseBtn.classList.toggle("hidden-section", !isConnected);
+  disconnectSupabaseBtn.classList.toggle("hidden-section", !isConnected);
+  signOutSupabaseBtn.classList.toggle("hidden-section", !isAuthenticated);
+}
+
+function setAuthenticatedUser(userId: string, email = ""): void {
+  supabaseUserId = userId;
+  supabaseUserEmail = email;
+  setSupabaseAuthStatus(email ? `Supabase auth: signed in as ${email}.` : "Supabase auth: signed in.");
+  updateSupabaseUi();
+}
+
+function clearAuthenticatedUser(): void {
+  supabaseAccessToken = "";
+  supabaseRefreshToken = "";
+  supabaseUserId = "";
+  supabaseUserEmail = "";
+  setSupabaseAuthStatus("Supabase auth: signed out.");
+  updateSupabaseUi();
+}
+
+function loadStoredSupabaseConfig(): SupabaseConfig {
+  return {
+    url: localStorage.getItem(SUPABASE_URL_KEY) ?? "",
+    anonKey: localStorage.getItem(SUPABASE_ANON_KEY) ?? "",
+    syncKey: localStorage.getItem(SUPABASE_SYNC_KEY) ?? ""
+  };
+}
+
+function saveSupabaseConfig(config: SupabaseConfig): void {
+  localStorage.setItem(SUPABASE_URL_KEY, config.url);
+  localStorage.setItem(SUPABASE_ANON_KEY, config.anonKey);
+  localStorage.setItem(SUPABASE_SYNC_KEY, config.syncKey);
+}
+
+function loadStoredSupabaseEmail(): string {
+  return localStorage.getItem(SUPABASE_EMAIL_KEY) ?? "";
+}
+
+function saveSupabaseEmail(email: string): void {
+  if (!email) {
+    localStorage.removeItem(SUPABASE_EMAIL_KEY);
+    return;
+  }
+  localStorage.setItem(SUPABASE_EMAIL_KEY, email);
+}
+
+function getSupabaseConfig(): SupabaseConfig {
+  const config: SupabaseConfig = {
+    url: supabaseUrlInput.value.trim().replace(/\/+$/, ""),
+    anonKey: supabaseAnonKeyInput.value.trim(),
+    syncKey: supabaseSyncKeyInput.value.trim()
+  };
+
+  if (!config.url || !config.anonKey || !config.syncKey) {
+    throw new Error("Provide Supabase URL, anon key, and sync key.");
+  }
+
+  return config;
+}
+
+function supabaseAnonHeaders(config: SupabaseConfig): Headers {
+  return new Headers({
+    apikey: config.anonKey,
+    "Content-Type": "application/json"
+  });
+}
+
+function ensureSupabaseAuthToken(): string {
+  if (!supabaseAccessToken || !supabaseUserId) {
+    throw new Error("Sign in to Supabase first.");
+  }
+  return supabaseAccessToken;
+}
+
+function supabaseHeaders(config: SupabaseConfig): Headers {
+  const token = ensureSupabaseAuthToken();
+  return new Headers({
+    apikey: config.anonKey,
+    Authorization: `Bearer ${token}`,
+    "Content-Type": "application/json"
+  });
+}
+
+function getSupabaseAuthCredentials(): { email: string; password: string } {
+  const email = supabaseEmailInput.value.trim();
+  const password = supabasePasswordInput.value;
+  if (!email || !password) {
+    throw new Error("Provide Supabase email and password.");
+  }
+  return { email, password };
+}
+
+async function fetchSupabaseUser(config: SupabaseConfig, accessToken: string): Promise<SupabaseUserResponse> {
+  const response = await fetch(`${config.url}/auth/v1/user`, {
+    headers: new Headers({
+      apikey: config.anonKey,
+      Authorization: `Bearer ${accessToken}`
+    })
+  });
+
+  if (!response.ok) {
+    throw new Error(`Supabase user fetch failed (${response.status}).`);
+  }
+
+  return (await response.json()) as SupabaseUserResponse;
+}
+
+async function buildSupabaseError(response: Response, fallback: string): Promise<Error> {
+  let detail = "";
+
+  try {
+    detail = await response.text();
+  } catch {
+    detail = "";
+  }
+
+  return new Error(`${fallback} (${response.status}).${detail ? ` ${detail}` : ""}`);
+}
+
+async function signInSupabaseWithPassword(config: SupabaseConfig): Promise<void> {
+  const credentials = getSupabaseAuthCredentials();
+  saveSupabaseEmail(credentials.email);
+
+  const response = await fetch(`${config.url}/auth/v1/token?grant_type=password`, {
+    method: "POST",
+    headers: supabaseAnonHeaders(config),
+    body: JSON.stringify(credentials)
+  });
+
+  if (!response.ok) {
+    throw await buildSupabaseError(response, "Supabase sign-in failed");
+  }
+
+  const auth = (await response.json()) as SupabaseAuthResponse;
+  const user = auth.user ?? (await fetchSupabaseUser(config, auth.access_token));
+  supabaseAccessToken = auth.access_token;
+  supabaseRefreshToken = auth.refresh_token;
+  setAuthenticatedUser(user.id, user.email ?? credentials.email);
+}
+
+async function signUpSupabaseWithPassword(config: SupabaseConfig): Promise<void> {
+  const credentials = getSupabaseAuthCredentials();
+  saveSupabaseEmail(credentials.email);
+
+  const response = await fetch(`${config.url}/auth/v1/signup`, {
+    method: "POST",
+    headers: supabaseAnonHeaders(config),
+    body: JSON.stringify(credentials)
+  });
+
+  if (!response.ok) {
+    throw await buildSupabaseError(response, "Supabase sign-up failed");
+  }
+
+  setSupabaseAuthStatus(
+    "Supabase sign-up request accepted. If email confirmation is enabled, confirm email then sign in."
+  );
+}
+
+async function pushToSupabase(config: SupabaseConfig, payload: SyncPayload): Promise<void> {
+  const userId = supabaseUserId;
+  if (!userId) {
+    throw new Error("Sign in to Supabase first.");
+  }
+
+  const url = `${config.url}/rest/v1/${SUPABASE_TABLE}?on_conflict=owner_id,sync_key`;
+  const body = JSON.stringify([
+    {
+      owner_id: userId,
+      sync_key: config.syncKey,
+      payload,
+      updated_at: new Date().toISOString()
+    }
+  ]);
+
+  const headers = supabaseHeaders(config);
+  headers.set("Prefer", "resolution=merge-duplicates,return=minimal");
+
+  const response = await fetch(url, {
+    method: "POST",
+    headers,
+    body
+  });
+
+  if (!response.ok) {
+    throw await buildSupabaseError(response, "Supabase push failed");
+  }
+}
+
+async function pullFromSupabase(config: SupabaseConfig): Promise<SyncPayload | null> {
+  const userId = supabaseUserId;
+  if (!userId) {
+    throw new Error("Sign in to Supabase first.");
+  }
+
+  const encodedSyncKey = encodeURIComponent(config.syncKey);
+  const encodedUserId = encodeURIComponent(userId);
+  const url = `${config.url}/rest/v1/${SUPABASE_TABLE}?owner_id=eq.${encodedUserId}&sync_key=eq.${encodedSyncKey}&select=payload&limit=1`;
+  const response = await fetch(url, {
+    headers: supabaseHeaders(config)
+  });
+
+  if (!response.ok) {
+    throw await buildSupabaseError(response, "Supabase pull failed");
+  }
+
+  const rows = (await response.json()) as Array<{ payload: SyncPayload }>;
+  return rows[0]?.payload ?? null;
+}
+
+async function validateSupabaseSyncTable(config: SupabaseConfig): Promise<void> {
+  const userId = supabaseUserId;
+  if (!userId) {
+    throw new Error("Sign in to Supabase first.");
+  }
+
+  const encodedSyncKey = encodeURIComponent(config.syncKey);
+  const encodedUserId = encodeURIComponent(userId);
+  const url = `${config.url}/rest/v1/${SUPABASE_TABLE}?owner_id=eq.${encodedUserId}&sync_key=eq.${encodedSyncKey}&select=owner_id,sync_key&limit=1`;
+  const response = await fetch(url, {
+    headers: supabaseHeaders(config)
+  });
+
+  if (!response.ok) {
+    throw await buildSupabaseError(
+      response,
+      "Supabase table validation failed. Check the safer schema and RLS setup from README"
+    );
+  }
+}
+
+function buildSyncPayload(): SyncPayload {
+  const checkedByNormalizedName: Record<string, boolean> = {};
+  for (const item of items) {
+    checkedByNormalizedName[normalizeText(item.name)] = Boolean(checkedById[item.id]);
+  }
+
+  return {
+    version: 1,
+    savedAt: new Date().toISOString(),
+    names: items.map((item) => item.name),
+    checkedByNormalizedName
+  };
+}
+
+function normalizedNamesOfCurrentItems(): string[] {
+  return items.map((item) => normalizeText(item.name));
+}
+
+function normalizedNamesOfPayload(payload: SyncPayload): string[] {
+  return payload.names.map((name) => normalizeText(name));
+}
+
+function areNameListsEqual(a: string[], b: string[]): boolean {
+  if (a.length !== b.length) {
+    return false;
+  }
+  for (let i = 0; i < a.length; i += 1) {
+    if (a[i] !== b[i]) {
+      return false;
+    }
+  }
+  return true;
+}
+
+function supportsIndexedDb(): boolean {
+  return typeof indexedDB !== "undefined";
+}
+
+function openDb(): Promise<IDBDatabase> {
+  return new Promise((resolve, reject) => {
+    const request = indexedDB.open(DB_NAME, DB_VERSION);
+
+    request.onupgradeneeded = () => {
+      const db = request.result;
+      if (!db.objectStoreNames.contains(DB_STORE)) {
+        db.createObjectStore(DB_STORE);
+      }
+    };
+
+    request.onsuccess = () => {
+      resolve(request.result);
+    };
+
+    request.onerror = () => {
+      reject(request.error ?? new Error("Failed to open IndexedDB."));
+    };
+  });
+}
+
+async function runDbRequest<T>(
+  mode: IDBTransactionMode,
+  action: (store: IDBObjectStore) => IDBRequest<T>
+): Promise<T> {
+  const db = await openDb();
+
+  return new Promise<T>((resolve, reject) => {
+    const tx = db.transaction(DB_STORE, mode);
+    const store = tx.objectStore(DB_STORE);
+    const request = action(store);
+
+    request.onsuccess = () => {
+      resolve(request.result);
+    };
+
+    request.onerror = () => {
+      reject(request.error ?? new Error("IndexedDB request failed."));
+    };
+
+    tx.oncomplete = () => {
+      db.close();
+    };
+
+    tx.onerror = () => {
+      reject(tx.error ?? new Error("IndexedDB transaction failed."));
+      db.close();
+    };
+  });
+}
+
+async function readLatestSnapshot(): Promise<PersistedSnapshot | null> {
+  if (!supportsIndexedDb()) {
+    return null;
+  }
+
+  const result = await runDbRequest("readonly", (store) =>
+    store.get(DB_LATEST_KEY) as IDBRequest<PersistedSnapshot | undefined>
+  );
+  return result ?? null;
+}
+
+async function writeLatestSnapshot(snapshot: PersistedSnapshot): Promise<void> {
+  if (!supportsIndexedDb()) {
+    return;
+  }
+
+  await runDbRequest("readwrite", (store) => store.put(snapshot, DB_LATEST_KEY));
+}
+
+async function deleteLatestSnapshot(): Promise<void> {
+  if (!supportsIndexedDb()) {
+    return;
+  }
+
+  await runDbRequest("readwrite", (store) => store.delete(DB_LATEST_KEY));
+}
+
+function currentSnapshot(): PersistedSnapshot {
+  return {
+    version: 1,
+    namesText: items.map((item) => item.name).join("\n"),
+    items: items.map((item) => ({
+      id: item.id,
+      name: item.name,
+      imageBlob: item.imageBlob,
+      imageFileName: item.imageFileName
+    })),
+    checkedById: { ...checkedById },
+    searchQuery: searchInput.value,
+    missingOnly: missingOnly.checked,
+    savedAt: new Date().toISOString()
+  };
+}
+
+async function persistCurrentState(): Promise<void> {
+  writeCheckedToStorage();
+
+  if (!indexedDbMode.checked || !items.length) {
+    return;
+  }
+
+  try {
+    await writeLatestSnapshot(currentSnapshot());
+  } catch {
+    renderStatus("IndexedDB save failed; keeping local state only.");
+  }
+}
+
+function cancelScheduledPersist(): void {
+  if (persistTimer !== null) {
+    window.clearTimeout(persistTimer);
+    persistTimer = null;
+  }
+}
+
+function schedulePersist(): void {
+  cancelScheduledPersist();
+  persistTimer = window.setTimeout(() => {
+    persistTimer = null;
+    void persistCurrentState();
+  }, PERSIST_DEBOUNCE_MS);
+}
+
+async function restoreFromSnapshot(snapshot: PersistedSnapshot): Promise<void> {
+  revokeImageUrls();
+
+  items = snapshot.items.map((item) => {
+    const imageUrl = item.imageBlob ? URL.createObjectURL(item.imageBlob) : null;
+    if (imageUrl) {
+      activeImageUrls.push(imageUrl);
+    }
+    return {
+      id: item.id,
+      name: item.name,
+      imageUrl,
+      imageBlob: item.imageBlob,
+      imageFileName: item.imageFileName
+    };
+  });
+
+  checkedById = { ...snapshot.checkedById };
+  for (const item of items) {
+    if (typeof checkedById[item.id] !== "boolean") {
+      checkedById[item.id] = false;
+    }
+  }
+
+  const names = items.map((item) => item.name);
+  storageKey = `${STORAGE_PREFIX}${hashText(names.map((name) => normalizeText(name)).join("|"))}`;
+
+  namesInput.value = snapshot.namesText;
+  searchInput.value = snapshot.searchQuery;
+  missingOnly.checked = snapshot.missingOnly;
+  renderStatus("Restored saved checklist from IndexedDB.");
+  render();
+}
+
+function render(): void {
+  const query = normalizeText(searchInput.value);
+  const showMissingOnly = missingOnly.checked;
+
+  grid.innerHTML = "";
+
+  const visibleItems = items.filter((item) => {
+    const checked = Boolean(checkedById[item.id]);
+    const matchesQuery = !query || normalizeText(item.name).includes(query);
+    const matchesMissing = !showMissingOnly || !checked;
+    return matchesQuery && matchesMissing;
+  });
+
+  for (const item of visibleItems) {
+    const card = document.createElement("article");
+    card.className = `card${checkedById[item.id] ? " checked" : ""}`;
+
+    if (item.imageUrl) {
+      const img = document.createElement("img");
+      img.src = item.imageUrl;
+      img.alt = item.name;
+      card.append(img);
+    } else {
+      const placeholder = document.createElement("div");
+      placeholder.className = "placeholder";
+      placeholder.textContent = "No image";
+      card.append(placeholder);
+    }
+
+    const body = document.createElement("div");
+    body.className = "card-body";
+
+    const title = document.createElement("h3");
+    title.className = "name";
+    title.textContent = item.name;
+
+    const ownToggle = document.createElement("label");
+    ownToggle.className = "own-toggle";
+
+    const checkbox = document.createElement("input");
+    checkbox.type = "checkbox";
+    checkbox.checked = Boolean(checkedById[item.id]);
+    checkbox.addEventListener("change", () => {
+      checkedById[item.id] = checkbox.checked;
+      renderStatus();
+      if (missingOnly.checked) {
+        render();
+      } else {
+        card.className = `card${checkbox.checked ? " checked" : ""}`;
+      }
+      schedulePersist();
+    });
+
+    const textNode = document.createElement("span");
+    textNode.textContent = "Owned";
+
+    ownToggle.append(checkbox, textNode);
+    body.append(title, ownToggle);
+    card.append(body);
+    grid.append(card);
+  }
+
+  if (visibleItems.length === 0) {
+    const empty = document.createElement("div");
+    empty.className = "panel";
+    empty.textContent = "No items match the current filters.";
+    grid.append(empty);
+  }
+}
+
+function renderStatus(extraMessage = ""): void {
+  if (!items.length) {
+    statusText.textContent = "No checklist loaded.";
+    return;
+  }
+
+  const owned = items.filter((item) => checkedById[item.id]).length;
+  const total = items.length;
+  const missing = total - owned;
+  const pct = Math.round((owned / total) * 100);
+
+  statusText.textContent = `${owned}/${total} owned (${pct}%). Missing: ${missing}.${
+    extraMessage ? ` ${extraMessage}` : ""
+  }`;
+}
+
+async function buildChecklist(): Promise<void> {
+  cancelScheduledPersist();
+
+  const names = parseNames(namesInput.value);
+  if (names.length === 0) {
+    alert("Please provide at least one name.");
+    return;
+  }
+
+  revokeImageUrls();
+
+  const imageFiles = Array.from(imagesInput.files ?? []);
+  const unmatchedImages = [...imageFiles];
+  const imageByStem = new Map<string, File[]>();
+
+  for (const file of imageFiles) {
+    const stem = normalizeText(file.name);
+    const bucket = imageByStem.get(stem) ?? [];
+    bucket.push(file);
+    imageByStem.set(stem, bucket);
+  }
+
+  items = names.map((name, index) => {
+    const stem = normalizeText(name);
+    const exact = imageByStem.get(stem);
+    let chosen: File | undefined;
+
+    if (exact && exact.length > 0) {
+      chosen = exact.shift();
+      const idx = unmatchedImages.indexOf(chosen as File);
+      if (idx >= 0) {
+        unmatchedImages.splice(idx, 1);
+      }
+    } else if (unmatchedImages.length > 0) {
+      chosen = unmatchedImages.shift();
+    }
+
+    const imageUrl = chosen ? URL.createObjectURL(chosen) : null;
+    if (imageUrl) {
+      activeImageUrls.push(imageUrl);
+    }
+
+    return {
+      id: `${index}-${normalizeText(name)}`,
+      name,
+      imageUrl,
+      imageBlob: chosen ?? null,
+      imageFileName: chosen?.name ?? null
+    };
+  });
+
+  storageKey = `${STORAGE_PREFIX}${hashText(names.map((name) => normalizeText(name)).join("|"))}`;
+  checkedById = readCheckedFromStorage(storageKey);
+
+  for (const item of items) {
+    if (typeof checkedById[item.id] !== "boolean") {
+      checkedById[item.id] = false;
+    }
+  }
+
+  await persistCurrentState();
+
+  let message = "";
+  if (imageFiles.length === 0) {
+    message = "Loaded without images.";
+  } else {
+    const withImage = items.filter((item) => item.imageUrl).length;
+    message = `${withImage}/${items.length} items have images.`;
+  }
+
+  renderStatus(message);
+  render();
+}
+
+async function applySyncPayload(payload: SyncPayload): Promise<void> {
+  if (payload.version !== 1 || !Array.isArray(payload.names) || !payload.checkedByNormalizedName) {
+    throw new Error("Unsupported sync payload format.");
+  }
+
+  const currentNames = normalizedNamesOfCurrentItems();
+  const incomingNames = normalizedNamesOfPayload(payload);
+  const sameDataset = areNameListsEqual(currentNames, incomingNames);
+
+  if (!sameDataset) {
+    if (items.length > 0) {
+      const proceed = confirm(
+        "Synced payload has a different item list. Replace current checklist with synced checklist?"
+      );
+      if (!proceed) {
+        return;
+      }
+    }
+
+    namesInput.value = payload.names.join("\n");
+    imagesInput.value = "";
+    await buildChecklist();
+  }
+
+  let applied = 0;
+  for (const item of items) {
+    const key = normalizeText(item.name);
+    const next = payload.checkedByNormalizedName[key];
+    if (typeof next === "boolean") {
+      checkedById[item.id] = next;
+      applied += 1;
+    }
+  }
+
+  await persistCurrentState();
+  renderStatus(`Pulled from Supabase. Applied ${applied}/${items.length} items.`);
+  render();
+}
+
+function exportProgress(): void {
+  if (!items.length) {
+    alert("Build a checklist first.");
+    return;
+  }
+
+  const payload: ProgressFile = {
+    version: 1,
+    names: items.map((item) => item.name),
+    checkedByName: Object.fromEntries(
+      items.map((item) => [normalizeText(item.name), Boolean(checkedById[item.id])])
+    ),
+    exportedAt: new Date().toISOString()
+  };
+
+  const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = "checklist-progress.json";
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+async function importProgress(file: File): Promise<void> {
+  cancelScheduledPersist();
+
+  if (!items.length) {
+    alert("Build a checklist first.");
+    return;
+  }
+
+  const text = await file.text();
+  let data: ProgressFile;
+
+  try {
+    data = JSON.parse(text) as ProgressFile;
+  } catch {
+    alert("Could not parse JSON file.");
+    return;
+  }
+
+  if (data.version !== 1 || !Array.isArray(data.names) || !data.checkedByName) {
+    alert("Unsupported progress format.");
+    return;
+  }
+
+  const checkedByName = data.checkedByName;
+  let applied = 0;
+
+  for (const item of items) {
+    const key = normalizeText(item.name);
+    const next = checkedByName[key];
+    if (typeof next === "boolean") {
+      checkedById[item.id] = next;
+      applied += 1;
+    }
+  }
+
+  await persistCurrentState();
+  renderStatus(`Imported progress for ${applied}/${items.length} items.`);
+  render();
+}
+
+async function loadNamesFromFile(file: File): Promise<void> {
+  const text = await file.text();
+  namesInput.value = text;
+}
+
+async function clearAll(): Promise<void> {
+  cancelScheduledPersist();
+
+  if (storageKey) {
+    localStorage.removeItem(storageKey);
+  }
+
+  if (indexedDbMode.checked) {
+    try {
+      await deleteLatestSnapshot();
+    } catch {
+      // Ignore errors when deleting persisted data.
+    }
+  }
+
+  namesInput.value = "";
+  namesFile.value = "";
+  imagesInput.value = "";
+  searchInput.value = "";
+  missingOnly.checked = false;
+  revokeImageUrls();
+  items = [];
+  checkedById = {};
+  storageKey = "";
+  renderStatus();
+  render();
+}
+
+async function resetProgress(): Promise<void> {
+  cancelScheduledPersist();
+
+  if (!items.length || !storageKey) {
+    alert("Build a checklist first.");
+    return;
+  }
+
+  for (const item of items) {
+    checkedById[item.id] = false;
+  }
+
+  await persistCurrentState();
+  renderStatus("Progress reset.");
+  render();
+}
+
+async function deleteSavedData(): Promise<void> {
+  cancelScheduledPersist();
+
+  try {
+    await deleteLatestSnapshot();
+    renderStatus("IndexedDB snapshot deleted.");
+  } catch {
+    renderStatus("Could not delete IndexedDB snapshot.");
+  }
+}
+
+function connectSupabase(): void {
+  void (async () => {
+    try {
+      const config = getSupabaseConfig();
+      ensureSupabaseAuthToken();
+      saveSupabaseConfig(config);
+      await validateSupabaseSyncTable(config);
+      supabaseConnected = true;
+      setSupabaseStatus("Supabase connected for manual sync.");
+      updateSupabaseUi();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Supabase connection failed.";
+      setSupabaseStatus(message);
+      updateSupabaseUi();
+    }
+  })();
+}
+
+async function signInSupabaseNow(): Promise<void> {
+  try {
+    const config = getSupabaseConfig();
+    saveSupabaseConfig(config);
+    await signInSupabaseWithPassword(config);
+    setSupabaseStatus("Supabase signed in. Click Connect Supabase.");
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Supabase sign-in failed.";
+    setSupabaseAuthStatus(message);
+  }
+}
+
+async function signUpSupabaseNow(): Promise<void> {
+  try {
+    const config = getSupabaseConfig();
+    saveSupabaseConfig(config);
+    await signUpSupabaseWithPassword(config);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Supabase sign-up failed.";
+    setSupabaseAuthStatus(message);
+  }
+}
+
+async function signOutSupabaseNow(): Promise<void> {
+  try {
+    const config = getSupabaseConfig();
+    if (supabaseAccessToken) {
+      await fetch(`${config.url}/auth/v1/logout`, {
+        method: "POST",
+        headers: new Headers({
+          apikey: config.anonKey,
+          Authorization: `Bearer ${supabaseAccessToken}`
+        })
+      });
+    }
+  } finally {
+    clearAuthenticatedUser();
+    supabaseConnected = false;
+    setSupabaseStatus("Supabase sync is disconnected.");
+    updateSupabaseUi();
+  }
+}
+
+async function pushToSupabaseNow(): Promise<void> {
+  if (!items.length) {
+    alert("Build a checklist first.");
+    return;
+  }
+
+  try {
+    const config = getSupabaseConfig();
+    ensureSupabaseAuthToken();
+    saveSupabaseConfig(config);
+    const payload = buildSyncPayload();
+    await pushToSupabase(config, payload);
+    supabaseConnected = true;
+    setSupabaseStatus(`Pushed to Supabase at ${new Date().toLocaleString()}.`);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Supabase push failed.";
+    setSupabaseStatus(message);
+  }
+}
+
+async function pullFromSupabaseNow(): Promise<void> {
+  try {
+    const config = getSupabaseConfig();
+    ensureSupabaseAuthToken();
+    saveSupabaseConfig(config);
+    const payload = await pullFromSupabase(config);
+    if (!payload) {
+      setSupabaseStatus("No synced state found for this sync key yet.");
+      return;
+    }
+
+    await applySyncPayload(payload);
+    supabaseConnected = true;
+    setSupabaseStatus(`Pulled from Supabase at ${new Date().toLocaleString()}.`);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Supabase pull failed.";
+    setSupabaseStatus(message);
+  }
+}
+
+function disconnectSupabase(): void {
+  supabaseConnected = false;
+  setSupabaseStatus("Supabase sync is disconnected.");
+  updateSupabaseUi();
+}
+
+buildBtn.addEventListener("click", async () => {
+  await buildChecklist();
+});
+
+clearBtn.addEventListener("click", async () => {
+  await clearAll();
+});
+
+resetProgressBtn.addEventListener("click", async () => {
+  await resetProgress();
+});
+
+deleteSavedBtn.addEventListener("click", async () => {
+  await deleteSavedData();
+});
+
+signUpSupabaseBtn.addEventListener("click", async () => {
+  await signUpSupabaseNow();
+});
+
+signInSupabaseBtn.addEventListener("click", async () => {
+  await signInSupabaseNow();
+});
+
+signOutSupabaseBtn.addEventListener("click", async () => {
+  await signOutSupabaseNow();
+});
+
+connectSupabaseBtn.addEventListener("click", () => {
+  connectSupabase();
+});
+
+pushSupabaseBtn.addEventListener("click", async () => {
+  await pushToSupabaseNow();
+});
+
+pullSupabaseBtn.addEventListener("click", async () => {
+  await pullFromSupabaseNow();
+});
+
+disconnectSupabaseBtn.addEventListener("click", () => {
+  disconnectSupabase();
+});
+
+exportProgressBtn.addEventListener("click", () => {
+  exportProgress();
+});
+
+namesFile.addEventListener("change", async () => {
+  const file = namesFile.files?.[0];
+  if (!file) {
+    return;
+  }
+  await loadNamesFromFile(file);
+});
+
+importProgressInput.addEventListener("change", async () => {
+  const file = importProgressInput.files?.[0];
+  if (!file) {
+    return;
+  }
+  await importProgress(file);
+  importProgressInput.value = "";
+});
+
+searchInput.addEventListener("input", () => {
+  schedulePersist();
+  render();
+});
+
+missingOnly.addEventListener("change", () => {
+  schedulePersist();
+  render();
+});
+
+indexedDbMode.addEventListener("change", () => {
+  if (!indexedDbMode.checked) {
+    renderStatus("IndexedDB mode disabled. Local session remains active.");
+    return;
+  }
+  void persistCurrentState();
+  renderStatus("IndexedDB mode enabled.");
+});
+
+supabaseUrlInput.addEventListener("change", () => {
+  supabaseConnected = false;
+  setSupabaseStatus("Supabase settings changed. Click Connect Supabase.");
+  updateSupabaseUi();
+});
+
+supabaseAnonKeyInput.addEventListener("change", () => {
+  supabaseConnected = false;
+  setSupabaseStatus("Supabase settings changed. Click Connect Supabase.");
+  updateSupabaseUi();
+});
+
+supabaseSyncKeyInput.addEventListener("change", () => {
+  supabaseConnected = false;
+  setSupabaseStatus("Supabase settings changed. Click Connect Supabase.");
+  updateSupabaseUi();
+});
+
+supabaseEmailInput.addEventListener("change", () => {
+  saveSupabaseEmail(supabaseEmailInput.value.trim());
+  clearAuthenticatedUser();
+  supabaseConnected = false;
+  updateSupabaseUi();
+});
+
+supabasePasswordInput.addEventListener("change", () => {
+  clearAuthenticatedUser();
+  supabaseConnected = false;
+  updateSupabaseUi();
+});
+
+window.addEventListener("beforeunload", () => {
+  cancelScheduledPersist();
+  writeCheckedToStorage();
+  revokeImageUrls();
+});
+
+renderStatus();
+const storedSupabase = loadStoredSupabaseConfig();
+supabaseUrlInput.value = storedSupabase.url;
+supabaseAnonKeyInput.value = storedSupabase.anonKey;
+supabaseSyncKeyInput.value = storedSupabase.syncKey;
+supabaseEmailInput.value = loadStoredSupabaseEmail();
+clearAuthenticatedUser();
+if (storedSupabase.url && storedSupabase.anonKey && storedSupabase.syncKey) {
+  setSupabaseStatus("Supabase settings loaded. Sign in, then click Connect Supabase.");
+} else {
+  setSupabaseStatus("Supabase sync is disconnected.");
+}
+updateSupabaseUi();
+if (!supportsIndexedDb()) {
+  indexedDbMode.checked = false;
+  indexedDbMode.disabled = true;
+  renderStatus("IndexedDB is not supported in this browser.");
+} else {
+  void (async () => {
+    const snapshot = await readLatestSnapshot();
+    if (!snapshot) {
+      return;
+    }
+    await restoreFromSnapshot(snapshot);
+  })();
+}
