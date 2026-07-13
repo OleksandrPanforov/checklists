@@ -66,6 +66,9 @@ type SupabaseUserResponse = {
   email?: string;
 };
 
+import { enTranslations } from "./i18n/en";
+import { ukTranslations } from "./i18n/uk";
+
 const namesInput = document.querySelector<HTMLTextAreaElement>("#namesInput")!;
 const namesFile = document.querySelector<HTMLInputElement>("#namesFile")!;
 const imagesInput = document.querySelector<HTMLInputElement>("#imagesInput")!;
@@ -97,6 +100,106 @@ const searchInput = document.querySelector<HTMLInputElement>("#searchInput")!;
 const missingOnly = document.querySelector<HTMLInputElement>("#missingOnly")!;
 const statusText = document.querySelector<HTMLDivElement>("#statusText")!;
 const grid = document.querySelector<HTMLDivElement>("#grid")!;
+const languageSelector = document.querySelector<HTMLSelectElement>("#languageSelector")!;
+
+// Translations
+type Language = "en" | "uk";
+
+interface Translations {
+  [key: string]: string;
+}
+
+interface TranslationDict {
+  en: Translations;
+  uk: Translations;
+}
+
+const translations: TranslationDict = {
+  en: enTranslations,
+  uk: ukTranslations
+};
+
+let currentLanguage: Language = "en";
+
+function getTranslation(key: string): string {
+  return translations[currentLanguage][key] ?? key;
+}
+
+function setLanguage(lang: Language): void {
+  currentLanguage = lang;
+  localStorage.setItem("collection-checklist:language", lang);
+  applyTranslations();
+}
+
+function loadLanguagePreference(): Language {
+  const saved = localStorage.getItem("collection-checklist:language");
+  return (saved === "uk" || saved === "en") ? saved : "en";
+}
+
+function applyTranslations(): void {
+  // Update header
+  document.querySelector("h1")!.textContent = getTranslation("Collection Checklist");
+  document.querySelector(".hero p")!.textContent = getTranslation(
+    "Offline tracker for your local collection images and names."
+  );
+
+  // Update labels
+  const labels = document.querySelectorAll("label");
+  labels.forEach((label) => {
+    const text = label.textContent?.trim();
+    if (text) {
+      label.textContent = getTranslation(text);
+    }
+  });
+
+  // Update button texts
+  const buttons = document.querySelectorAll("button, .button");
+  buttons.forEach((btn) => {
+    const text = btn.textContent?.trim();
+    if (text) {
+      btn.textContent = getTranslation(text);
+    }
+  });
+
+  // Update headings
+  const headings = document.querySelectorAll("h2");
+  headings.forEach((heading) => {
+    const text = heading.textContent?.trim();
+    if (text) {
+      heading.textContent = getTranslation(text);
+    }
+  });
+
+  // Update paragraphs and hints
+  const paragraphs = document.querySelectorAll(".hint, .block-heading > p, .action-group-title");
+  paragraphs.forEach((para) => {
+    const text = para.textContent?.trim();
+    if (text && !text.includes("/")) {
+      para.textContent = getTranslation(text);
+    }
+  });
+
+  // Update placeholders and titles
+  const inputs = document.querySelectorAll("input[placeholder], textarea[placeholder]");
+  inputs.forEach((input) => {
+    const placeholder = input.getAttribute("placeholder");
+    if (placeholder) {
+      input.setAttribute("placeholder", getTranslation(placeholder));
+    }
+  });
+
+  // Update div action titles
+  const actionTitles = document.querySelectorAll(".action-group-title");
+  actionTitles.forEach((title) => {
+    const text = title.textContent?.trim();
+    if (text) {
+      title.textContent = getTranslation(text);
+    }
+  });
+
+  // Update language selector label
+  languageSelector.value = currentLanguage;
+}
 
 let items: Item[] = [];
 let checkedById: Record<string, boolean> = {};
@@ -744,7 +847,7 @@ function render(): void {
     } else {
       const placeholder = document.createElement("div");
       placeholder.className = "placeholder";
-      placeholder.textContent = "No image";
+      placeholder.textContent = getTranslation("No image");
       card.append(placeholder);
     }
 
@@ -773,7 +876,7 @@ function render(): void {
     });
 
     const textNode = document.createElement("span");
-    textNode.textContent = "Owned";
+    textNode.textContent = getTranslation("Owned");
 
     const details = sanitizeItemDetails(detailsById[item.id]);
 
@@ -781,7 +884,7 @@ function render(): void {
     countRow.className = "item-details-row";
 
     const countLabel = document.createElement("span");
-    countLabel.textContent = "Count";
+    countLabel.textContent = getTranslation("Count");
 
     const countInput = document.createElement("input");
     countInput.type = "number";
@@ -803,7 +906,7 @@ function render(): void {
 
     const commentInput = document.createElement("input");
     commentInput.type = "text";
-    commentInput.placeholder = "Comment";
+    commentInput.placeholder = getTranslation("Comment");
     commentInput.className = "item-comment-input";
     commentInput.value = details.comment;
     commentInput.addEventListener("change", () => {
@@ -823,14 +926,14 @@ function render(): void {
   if (visibleItems.length === 0) {
     const empty = document.createElement("div");
     empty.className = "panel";
-    empty.textContent = "No items match the current filters.";
+    empty.textContent = getTranslation("No items match the current filters.");
     grid.append(empty);
   }
 }
 
 function renderStatus(extraMessage = ""): void {
   if (!items.length) {
-    statusText.textContent = "No checklist loaded.";
+    statusText.textContent = getTranslation("No checklist loaded.");
     return;
   }
 
@@ -839,7 +942,7 @@ function renderStatus(extraMessage = ""): void {
   const missing = total - owned;
   const pct = Math.round((owned / total) * 100);
 
-  statusText.textContent = `${owned}/${total} owned (${pct}%). Missing: ${missing}.${
+  statusText.textContent = `${owned}/${total} owned (${pct}%). ${getTranslation("Missing")}: ${missing}.${
     extraMessage ? ` ${extraMessage}` : ""
   }`;
 }
@@ -849,7 +952,7 @@ async function buildChecklist(): Promise<void> {
 
   const names = parseNames(namesInput.value);
   if (names.length === 0) {
-    alert("Please provide at least one name.");
+    alert(getTranslation("Please provide at least one name."));
     return;
   }
 
@@ -911,7 +1014,7 @@ async function buildChecklist(): Promise<void> {
 
   let message = "";
   if (imageFiles.length === 0) {
-    message = "Loaded without images.";
+    message = getTranslation("Loaded without images.");
   } else {
     const withImage = items.filter((item) => item.imageUrl).length;
     message = `${withImage}/${items.length} items have images.`;
@@ -923,7 +1026,7 @@ async function buildChecklist(): Promise<void> {
 
 async function applySyncPayload(payload: SyncPayload): Promise<void> {
   if (payload.version !== 1 || !Array.isArray(payload.names) || !payload.checkedByNormalizedName) {
-    throw new Error("Unsupported sync payload format.");
+    throw new Error(getTranslation("Unsupported sync payload format."));
   }
 
   const currentNames = normalizedNamesOfCurrentItems();
@@ -933,7 +1036,9 @@ async function applySyncPayload(payload: SyncPayload): Promise<void> {
   if (!sameDataset) {
     if (items.length > 0) {
       const proceed = confirm(
-        "Synced payload has a different item list. Replace current checklist with synced checklist?"
+        getTranslation(
+          "Synced payload has a different item list. Replace current checklist with synced checklist?"
+        )
       );
       if (!proceed) {
         return;
@@ -960,13 +1065,13 @@ async function applySyncPayload(payload: SyncPayload): Promise<void> {
   }
 
   await persistCurrentState();
-  renderStatus(`Pulled from Supabase. Applied ${applied}/${items.length} items.`);
+  renderStatus(`${getTranslation("Pulled from Supabase. Applied")} ${applied}/${items.length} items.`);
   render();
 }
 
 function exportProgress(): void {
   if (!items.length) {
-    alert("Build a checklist first.");
+    alert(getTranslation("Build a checklist first."));
     return;
   }
 
@@ -998,7 +1103,7 @@ async function importProgress(file: File): Promise<void> {
   cancelScheduledPersist();
 
   if (!items.length) {
-    alert("Build a checklist first.");
+    alert(getTranslation("Build a checklist first."));
     return;
   }
 
@@ -1008,12 +1113,12 @@ async function importProgress(file: File): Promise<void> {
   try {
     data = JSON.parse(text) as ProgressFile;
   } catch {
-    alert("Could not parse JSON file.");
+    alert(getTranslation("Could not parse JSON file."));
     return;
   }
 
   if (data.version !== 1 || !Array.isArray(data.names) || !data.checkedByName) {
-    alert("Unsupported progress format.");
+    alert(getTranslation("Unsupported progress format."));
     return;
   }
 
@@ -1041,7 +1146,7 @@ async function importProgress(file: File): Promise<void> {
   }
 
   await persistCurrentState();
-  renderStatus(`Imported progress for ${applied}/${items.length} items.`);
+  renderStatus(`${getTranslation("Imported progress for")} ${applied}/${items.length} items.`);
   render();
 }
 
@@ -1087,7 +1192,7 @@ async function resetProgress(): Promise<void> {
   cancelScheduledPersist();
 
   if (!items.length || !storageKey) {
-    alert("Build a checklist first.");
+    alert(getTranslation("Build a checklist first."));
     return;
   }
 
@@ -1097,7 +1202,7 @@ async function resetProgress(): Promise<void> {
   }
 
   await persistCurrentState();
-  renderStatus("Progress reset.");
+  renderStatus(getTranslation("Progress reset."));
   render();
 }
 
@@ -1106,9 +1211,9 @@ async function deleteSavedData(): Promise<void> {
 
   try {
     await deleteLatestSnapshot();
-    renderStatus("IndexedDB snapshot deleted.");
+    renderStatus(getTranslation("IndexedDB snapshot deleted."));
   } catch {
-    renderStatus("Could not delete IndexedDB snapshot.");
+    renderStatus(getTranslation("Could not delete IndexedDB snapshot."));
   }
 }
 
@@ -1120,10 +1225,10 @@ function connectSupabase(): void {
       saveSupabaseConfig(config);
       await validateSupabaseSyncTable(config);
       supabaseConnected = true;
-      setSupabaseStatus("Supabase connected for manual sync.");
+      setSupabaseStatus(getTranslation("Supabase connected for manual sync."));
       updateSupabaseUi();
     } catch (error) {
-      const message = error instanceof Error ? error.message : "Supabase connection failed.";
+      const message = error instanceof Error ? error.message : getTranslation("Supabase connection failed.");
       setSupabaseStatus(message);
       updateSupabaseUi();
     }
@@ -1135,9 +1240,9 @@ async function signInSupabaseNow(): Promise<void> {
     const config = getSupabaseConfig();
     saveSupabaseConfig(config);
     await signInSupabaseWithPassword(config);
-    setSupabaseStatus("Supabase signed in. Click Connect Supabase.");
+    setSupabaseStatus(getTranslation("Supabase signed in. Click Connect Supabase."));
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Supabase sign-in failed.";
+    const message = error instanceof Error ? error.message : getTranslation("Supabase sign-in failed.");
     setSupabaseAuthStatus(message);
   }
 }
@@ -1148,7 +1253,7 @@ async function signUpSupabaseNow(): Promise<void> {
     saveSupabaseConfig(config);
     await signUpSupabaseWithPassword(config);
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Supabase sign-up failed.";
+    const message = error instanceof Error ? error.message : getTranslation("Supabase sign-up failed.");
     setSupabaseAuthStatus(message);
   }
 }
@@ -1168,14 +1273,14 @@ async function signOutSupabaseNow(): Promise<void> {
   } finally {
     clearAuthenticatedUser();
     supabaseConnected = false;
-    setSupabaseStatus("Supabase sync is disconnected.");
+    setSupabaseStatus(getTranslation("Supabase sync is disconnected."));
     updateSupabaseUi();
   }
 }
 
 async function pushToSupabaseNow(): Promise<void> {
   if (!items.length) {
-    alert("Build a checklist first.");
+    alert(getTranslation("Build a checklist first."));
     return;
   }
 
@@ -1186,9 +1291,9 @@ async function pushToSupabaseNow(): Promise<void> {
     const payload = buildSyncPayload();
     await pushToSupabase(config, payload);
     supabaseConnected = true;
-    setSupabaseStatus(`Pushed to Supabase at ${new Date().toLocaleString()}.`);
+    setSupabaseStatus(`${getTranslation("Pushed to Supabase at")} ${new Date().toLocaleString()}.`);
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Supabase push failed.";
+    const message = error instanceof Error ? error.message : getTranslation("Supabase push failed.");
     setSupabaseStatus(message);
   }
 }
@@ -1200,22 +1305,22 @@ async function pullFromSupabaseNow(): Promise<void> {
     saveSupabaseConfig(config);
     const payload = await pullFromSupabase(config);
     if (!payload) {
-      setSupabaseStatus("No synced state found for this sync key yet.");
+      setSupabaseStatus(getTranslation("No synced state found for this sync key yet."));
       return;
     }
 
     await applySyncPayload(payload);
     supabaseConnected = true;
-    setSupabaseStatus(`Pulled from Supabase at ${new Date().toLocaleString()}.`);
+    setSupabaseStatus(`${getTranslation("Pulled from Supabase at")} ${new Date().toLocaleString()}.`);
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Supabase pull failed.";
+    const message = error instanceof Error ? error.message : getTranslation("Supabase pull failed.");
     setSupabaseStatus(message);
   }
 }
 
 function disconnectSupabase(): void {
   supabaseConnected = false;
-  setSupabaseStatus("Supabase sync is disconnected.");
+  setSupabaseStatus(getTranslation("Supabase sync is disconnected."));
   updateSupabaseUi();
 }
 
@@ -1296,29 +1401,34 @@ missingOnly.addEventListener("change", () => {
 
 indexedDbMode.addEventListener("change", () => {
   if (!indexedDbMode.checked) {
-    renderStatus("IndexedDB mode disabled. Local session remains active.");
+    renderStatus(getTranslation("IndexedDB mode disabled. Local session remains active."));
     return;
   }
   void persistCurrentState();
-  renderStatus("IndexedDB mode enabled.");
+  renderStatus(getTranslation("IndexedDB mode enabled."));
 });
 
 supabaseUrlInput.addEventListener("change", () => {
   supabaseConnected = false;
-  setSupabaseStatus("Supabase settings changed. Click Connect Supabase.");
+  setSupabaseStatus(getTranslation("Supabase settings changed. Click Connect Supabase."));
   updateSupabaseUi();
 });
 
 supabaseAnonKeyInput.addEventListener("change", () => {
   supabaseConnected = false;
-  setSupabaseStatus("Supabase settings changed. Click Connect Supabase.");
+  setSupabaseStatus(getTranslation("Supabase settings changed. Click Connect Supabase."));
   updateSupabaseUi();
 });
 
 supabaseSyncKeyInput.addEventListener("change", () => {
   supabaseConnected = false;
-  setSupabaseStatus("Supabase settings changed. Click Connect Supabase.");
+  setSupabaseStatus(getTranslation("Supabase settings changed. Click Connect Supabase."));
   updateSupabaseUi();
+});
+
+languageSelector.addEventListener("change", () => {
+  const selectedLang = languageSelector.value as Language;
+  setLanguage(selectedLang);
 });
 
 supabaseEmailInput.addEventListener("change", () => {
@@ -1348,15 +1458,15 @@ supabaseSyncKeyInput.value = storedSupabase.syncKey;
 supabaseEmailInput.value = loadStoredSupabaseEmail();
 clearAuthenticatedUser();
 if (storedSupabase.url && storedSupabase.anonKey && storedSupabase.syncKey) {
-  setSupabaseStatus("Supabase settings loaded. Sign in, then click Connect Supabase.");
+  setSupabaseStatus(getTranslation("Supabase settings loaded. Sign in, then click Connect Supabase."));
 } else {
-  setSupabaseStatus("Supabase sync is disconnected.");
+  setSupabaseStatus(getTranslation("Supabase sync is disconnected."));
 }
 updateSupabaseUi();
 if (!supportsIndexedDb()) {
   indexedDbMode.checked = false;
   indexedDbMode.disabled = true;
-  renderStatus("IndexedDB is not supported in this browser.");
+  renderStatus(getTranslation("IndexedDB is not supported in this browser."));
 } else {
   void (async () => {
     try {
@@ -1366,7 +1476,12 @@ if (!supportsIndexedDb()) {
       }
       await restoreFromSnapshot(snapshot);
     } catch {
-      renderStatus("Saved checklist could not be restored. Build checklist again to continue.");
+      renderStatus(getTranslation("Saved checklist could not be restored. Build checklist again to continue."));
     }
   })();
 }
+
+// Initialize language
+currentLanguage = loadLanguagePreference();
+languageSelector.value = currentLanguage;
+applyTranslations();

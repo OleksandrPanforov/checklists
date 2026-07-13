@@ -1,13 +1,12 @@
 # Disclaimer
 I vibecoded it in its entirety. Use at your own risk.
-
 # Collection Checklist (Offline)
 
 Simple frontend-only web app that builds a visual checklist from:
 - a list of item names
 - local image files
 
-No backend, no network calls, and no account required.
+No backend, no network calls, and no account required. Supports English and Ukrainian languages.
 
 ## Why This Shape
 
@@ -15,7 +14,8 @@ This project is intentionally lightweight:
 - TypeScript + esbuild
 - static files in `dist/`
 - default progress stored in browser localStorage
-- optional IndexedDB mode stores full checklist snapshot (names, progress, image blobs)
+- optional IndexedDB mode stores full checklist snapshot (names, checked state, image blobs)
+- built-in multi-language support with i18n structure
 
 ## What You Were Missing
 
@@ -40,6 +40,8 @@ For this kind of offline app, these are key product decisions:
 - IndexedDB mode for full-state persistence including images
 - Progress export/import JSON
 - Reset progress + clear view controls
+- Multi-language support (English, Ukrainian) with language selector
+- Optional manual cloud sync via Supabase (sign in, push, pull)
 
 ## Quick Start
 
@@ -174,13 +176,30 @@ for delete using (auth.uid() = owner_id);
 
 ## Project Structure
 
-- `src/index.html` - UI shell
-- `src/styles.css` - styles
-- `src/main.ts` - app logic and state handling
-- `build.mjs` - build script (bundles TypeScript, copies static assets)
+```
+src/
+  index.html          - UI shell with language selector
+  styles.css          - responsive styling
+  main.ts             - app logic, state handling, translation functions
+  i18n/
+    README.md         - localization guide and language extension docs
+    en.ts             - English translations
+    uk.ts             - Ukrainian translations
+build.mjs             - esbuild script (bundles TypeScript, copies assets)
+dist/                 - built output (HTML, CSS, JS)
+```
+
+## Language Support
+
+The app ships with English and Ukrainian translations. Language preference is saved to localStorage and persists across sessions.
+
+See [src/i18n/README.md](src/i18n/README.md) for detailed instructions on adding new languages.
 
 ## Notes
 
-- This app is designed for offline local usage.
-- For large image sets, keep file sizes reasonable for smooth rendering.
-- In IndexedDB mode, very large image collections can hit browser quota limits.
+- This app is designed for offline local usage and works entirely in the browser.
+- Language preference is stored in localStorage (`collection-checklist:language`).
+- Checklist progress is keyed by a hash of normalized item names, so different collections do not overwrite each other.
+- For large image sets, keep file sizes reasonable for smooth rendering and to avoid browser storage quotas.
+- IndexedDB mode persists the full checklist state (names, progress, images) and enables restore on next visit.
+- Manual Supabase sync is available but disabled by default—no data is uploaded automatically.
