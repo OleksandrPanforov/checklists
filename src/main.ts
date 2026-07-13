@@ -129,6 +129,7 @@ function setLanguage(lang: Language): void {
   currentLanguage = lang;
   localStorage.setItem("collection-checklist:language", lang);
   applyTranslations();
+  render();
 }
 
 function loadLanguagePreference(): Language {
