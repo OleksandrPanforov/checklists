@@ -379,6 +379,29 @@ button:hover,
   accent-color: var(--ok);
 }
 
+.item-details-row {
+  display: grid;
+  grid-template-columns: auto 72px;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.9rem;
+  color: #3e352b;
+}
+
+.item-count-input,
+.item-comment-input {
+  width: 100%;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 7px 8px;
+  background: #fffcf5;
+  color: var(--text);
+}
+
+.item-count-input {
+  text-align: right;
+}
+
 @media (max-width: 860px) {
   .app-shell {
     width: min(100%, 95vw);

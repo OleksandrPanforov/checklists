@@ -1,5 +1,5 @@
 # Disclaimer
-I vibecoded it in it's entirety. Use at your own risk.
+I vibecoded it in its entirety. Use at your own risk.
 
 # Collection Checklist (Offline)
 
@@ -56,6 +56,18 @@ npm run build
 ```
 
 3. Open `dist/index.html` in a browser.
+
+## How To Use
+
+1. Paste your item names (one per line) or load a TXT/CSV file.
+2. Select item images (optional), then click `Build checklist`.
+3. For each card:
+	- toggle `Owned`
+	- set `Count`
+	- add a `Comment` (optional)
+4. Use search and `Show missing only` to focus the list.
+5. Keep `IndexedDB mode` enabled to restore full checklist state (including images) on next open.
+6. Use `Export progress` / `Import progress` when moving progress between browsers or devices.
 
 ## Distribution With GitHub Pages
 

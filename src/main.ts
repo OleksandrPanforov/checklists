@@ -6,10 +6,17 @@ type Item = {
   imageFileName: string | null;
 };
 
+type ItemDetails = {
+  count: number;
+  comment: string;
+};
+
 type ProgressFile = {
   version: 1;
   names: string[];
   checkedByName: Record<string, boolean>;
+  countByName?: Record<string, number>;
+  commentsByName?: Record<string, string>;
   exportedAt: string;
 };
 
@@ -25,6 +32,7 @@ type PersistedSnapshot = {
   namesText: string;
   items: PersistedItem[];
   checkedById: Record<string, boolean>;
+  detailsById?: Record<string, ItemDetails>;
   searchQuery: string;
   missingOnly: boolean;
   savedAt: string;
@@ -35,6 +43,7 @@ type SyncPayload = {
   savedAt: string;
   names: string[];
   checkedByNormalizedName: Record<string, boolean>;
+  detailsByNormalizedName?: Record<string, ItemDetails>;
 };
 
 type SupabaseConfig = {
@@ -91,7 +100,9 @@ const grid = document.querySelector<HTMLDivElement>("#grid")!;
 
 let items: Item[] = [];
 let checkedById: Record<string, boolean> = {};
+let detailsById: Record<string, ItemDetails> = {};
 let storageKey = "";
+let detailsStorageKey = "";
 let activeImageUrls: string[] = [];
 let persistTimer: number | null = null;
 let supabaseConnected = false;
@@ -182,11 +193,61 @@ function readCheckedFromStorage(key: string): Record<string, boolean> {
   }
 }
 
+function clampCount(value: number): number {
+  if (!Number.isFinite(value)) {
+    return 0;
+  }
+  return Math.max(0, Math.floor(value));
+}
+
+function defaultItemDetails(): ItemDetails {
+  return {
+    count: 0,
+    comment: ""
+  };
+}
+
+function sanitizeItemDetails(value: unknown): ItemDetails {
+  if (!value || typeof value !== "object") {
+    return defaultItemDetails();
+  }
+
+  const data = value as Partial<ItemDetails>;
+  const count = clampCount(Number(data.count ?? 0));
+  const comment = typeof data.comment === "string" ? data.comment : "";
+  return { count, comment };
+}
+
+function readDetailsFromStorage(key: string): Record<string, ItemDetails> {
+  const raw = localStorage.getItem(key);
+  if (!raw) {
+    return {};
+  }
+
+  try {
+    const parsed = JSON.parse(raw) as Record<string, unknown>;
+    const normalized: Record<string, ItemDetails> = {};
+    for (const [id, details] of Object.entries(parsed)) {
+      normalized[id] = sanitizeItemDetails(details);
+    }
+    return normalized;
+  } catch {
+    return {};
+  }
+}
+
 function writeCheckedToStorage(): void {
   if (!storageKey) {
     return;
   }
   localStorage.setItem(storageKey, JSON.stringify(checkedById));
+}
+
+function writeDetailsToStorage(): void {
+  if (!detailsStorageKey) {
+    return;
+  }
+  localStorage.setItem(detailsStorageKey, JSON.stringify(detailsById));
 }
 
 function setSupabaseStatus(message: string): void {
@@ -441,15 +502,19 @@ async function validateSupabaseSyncTable(config: SupabaseConfig): Promise<void> 
 
 function buildSyncPayload(): SyncPayload {
   const checkedByNormalizedName: Record<string, boolean> = {};
+  const detailsByNormalizedName: Record<string, ItemDetails> = {};
   for (const item of items) {
-    checkedByNormalizedName[normalizeText(item.name)] = Boolean(checkedById[item.id]);
+    const normalizedName = normalizeText(item.name);
+    checkedByNormalizedName[normalizedName] = Boolean(checkedById[item.id]);
+    detailsByNormalizedName[normalizedName] = sanitizeItemDetails(detailsById[item.id]);
   }
 
   return {
     version: 1,
     savedAt: new Date().toISOString(),
     names: items.map((item) => item.name),
-    checkedByNormalizedName
+    checkedByNormalizedName,
+    detailsByNormalizedName
   };
 }
 
@@ -566,6 +631,7 @@ function currentSnapshot(): PersistedSnapshot {
       imageFileName: item.imageFileName
     })),
     checkedById: { ...checkedById },
+    detailsById: { ...detailsById },
     searchQuery: searchInput.value,
     missingOnly: missingOnly.checked,
     savedAt: new Date().toISOString()
@@ -574,6 +640,7 @@ function currentSnapshot(): PersistedSnapshot {
 
 async function persistCurrentState(): Promise<void> {
   writeCheckedToStorage();
+  writeDetailsToStorage();
 
   if (!indexedDbMode.checked || !items.length) {
     return;
@@ -602,35 +669,52 @@ function schedulePersist(): void {
 }
 
 async function restoreFromSnapshot(snapshot: PersistedSnapshot): Promise<void> {
+  if (!snapshot || typeof snapshot !== "object") {
+    throw new Error("Saved snapshot is invalid.");
+  }
+
+  const snapshotItems = Array.isArray(snapshot.items) ? snapshot.items : [];
+  if (snapshotItems.length === 0) {
+    throw new Error("Saved snapshot has no items.");
+  }
+
   revokeImageUrls();
 
-  items = snapshot.items.map((item) => {
-    const imageUrl = item.imageBlob ? URL.createObjectURL(item.imageBlob) : null;
+  items = snapshotItems.map((item, index) => {
+    const safeName = typeof item.name === "string" && item.name.trim() ? item.name : `Item ${index + 1}`;
+    const safeId = typeof item.id === "string" && item.id.trim() ? item.id : `${index}-${normalizeText(safeName)}`;
+    const safeBlob = item.imageBlob instanceof Blob ? item.imageBlob : null;
+    const safeFileName = typeof item.imageFileName === "string" ? item.imageFileName : null;
+    const imageUrl = safeBlob ? URL.createObjectURL(safeBlob) : null;
     if (imageUrl) {
       activeImageUrls.push(imageUrl);
     }
     return {
-      id: item.id,
-      name: item.name,
+      id: safeId,
+      name: safeName,
       imageUrl,
-      imageBlob: item.imageBlob,
-      imageFileName: item.imageFileName
+      imageBlob: safeBlob,
+      imageFileName: safeFileName
     };
   });
 
-  checkedById = { ...snapshot.checkedById };
+  checkedById = snapshot.checkedById && typeof snapshot.checkedById === "object" ? { ...snapshot.checkedById } : {};
+  detailsById =
+    snapshot.detailsById && typeof snapshot.detailsById === "object" ? { ...snapshot.detailsById } : {};
   for (const item of items) {
     if (typeof checkedById[item.id] !== "boolean") {
       checkedById[item.id] = false;
     }
+    detailsById[item.id] = sanitizeItemDetails(detailsById[item.id]);
   }
 
   const names = items.map((item) => item.name);
   storageKey = `${STORAGE_PREFIX}${hashText(names.map((name) => normalizeText(name)).join("|"))}`;
+  detailsStorageKey = `${storageKey}:details`;
 
-  namesInput.value = snapshot.namesText;
-  searchInput.value = snapshot.searchQuery;
-  missingOnly.checked = snapshot.missingOnly;
+  namesInput.value = typeof snapshot.namesText === "string" ? snapshot.namesText : items.map((item) => item.name).join("\n");
+  searchInput.value = typeof snapshot.searchQuery === "string" ? snapshot.searchQuery : "";
+  missingOnly.checked = Boolean(snapshot.missingOnly);
   renderStatus("Restored saved checklist from IndexedDB.");
   render();
 }
@@ -691,8 +775,47 @@ function render(): void {
     const textNode = document.createElement("span");
     textNode.textContent = "Owned";
 
+    const details = sanitizeItemDetails(detailsById[item.id]);
+
+    const countRow = document.createElement("label");
+    countRow.className = "item-details-row";
+
+    const countLabel = document.createElement("span");
+    countLabel.textContent = "Count";
+
+    const countInput = document.createElement("input");
+    countInput.type = "number";
+    countInput.min = "0";
+    countInput.step = "1";
+    countInput.value = String(details.count);
+    countInput.className = "item-count-input";
+    countInput.addEventListener("change", () => {
+      const nextCount = clampCount(Number(countInput.value));
+      detailsById[item.id] = {
+        ...sanitizeItemDetails(detailsById[item.id]),
+        count: nextCount
+      };
+      countInput.value = String(nextCount);
+      schedulePersist();
+    });
+
+    countRow.append(countLabel, countInput);
+
+    const commentInput = document.createElement("input");
+    commentInput.type = "text";
+    commentInput.placeholder = "Comment";
+    commentInput.className = "item-comment-input";
+    commentInput.value = details.comment;
+    commentInput.addEventListener("change", () => {
+      detailsById[item.id] = {
+        ...sanitizeItemDetails(detailsById[item.id]),
+        comment: commentInput.value
+      };
+      schedulePersist();
+    });
+
     ownToggle.append(checkbox, textNode);
-    body.append(title, ownToggle);
+    body.append(title, ownToggle, countRow, commentInput);
     card.append(body);
     grid.append(card);
   }
@@ -773,12 +896,15 @@ async function buildChecklist(): Promise<void> {
   });
 
   storageKey = `${STORAGE_PREFIX}${hashText(names.map((name) => normalizeText(name)).join("|"))}`;
+  detailsStorageKey = `${storageKey}:details`;
   checkedById = readCheckedFromStorage(storageKey);
+  detailsById = readDetailsFromStorage(detailsStorageKey);
 
   for (const item of items) {
     if (typeof checkedById[item.id] !== "boolean") {
       checkedById[item.id] = false;
     }
+    detailsById[item.id] = sanitizeItemDetails(detailsById[item.id]);
   }
 
   await persistCurrentState();
@@ -823,9 +949,13 @@ async function applySyncPayload(payload: SyncPayload): Promise<void> {
   for (const item of items) {
     const key = normalizeText(item.name);
     const next = payload.checkedByNormalizedName[key];
+    const nextDetails = payload.detailsByNormalizedName?.[key];
     if (typeof next === "boolean") {
       checkedById[item.id] = next;
       applied += 1;
+    }
+    if (nextDetails) {
+      detailsById[item.id] = sanitizeItemDetails(nextDetails);
     }
   }
 
@@ -845,6 +975,12 @@ function exportProgress(): void {
     names: items.map((item) => item.name),
     checkedByName: Object.fromEntries(
       items.map((item) => [normalizeText(item.name), Boolean(checkedById[item.id])])
+    ),
+    countByName: Object.fromEntries(
+      items.map((item) => [normalizeText(item.name), sanitizeItemDetails(detailsById[item.id]).count])
+    ),
+    commentsByName: Object.fromEntries(
+      items.map((item) => [normalizeText(item.name), sanitizeItemDetails(detailsById[item.id]).comment])
     ),
     exportedAt: new Date().toISOString()
   };
@@ -882,11 +1018,22 @@ async function importProgress(file: File): Promise<void> {
   }
 
   const checkedByName = data.checkedByName;
+  const countByName = data.countByName ?? {};
+  const commentsByName = data.commentsByName ?? {};
   let applied = 0;
 
   for (const item of items) {
     const key = normalizeText(item.name);
     const next = checkedByName[key];
+    const currentDetails = sanitizeItemDetails(detailsById[item.id]);
+    const nextCount = clampCount(Number(countByName[key] ?? currentDetails.count));
+    const nextComment = typeof commentsByName[key] === "string" ? commentsByName[key] : currentDetails.comment;
+
+    detailsById[item.id] = {
+      count: nextCount,
+      comment: nextComment
+    };
+
     if (typeof next === "boolean") {
       checkedById[item.id] = next;
       applied += 1;
@@ -909,6 +1056,9 @@ async function clearAll(): Promise<void> {
   if (storageKey) {
     localStorage.removeItem(storageKey);
   }
+  if (detailsStorageKey) {
+    localStorage.removeItem(detailsStorageKey);
+  }
 
   if (indexedDbMode.checked) {
     try {
@@ -926,7 +1076,9 @@ async function clearAll(): Promise<void> {
   revokeImageUrls();
   items = [];
   checkedById = {};
+  detailsById = {};
   storageKey = "";
+  detailsStorageKey = "";
   renderStatus();
   render();
 }
@@ -941,6 +1093,7 @@ async function resetProgress(): Promise<void> {
 
   for (const item of items) {
     checkedById[item.id] = false;
+    detailsById[item.id] = defaultItemDetails();
   }
 
   await persistCurrentState();
@@ -1206,10 +1359,14 @@ if (!supportsIndexedDb()) {
   renderStatus("IndexedDB is not supported in this browser.");
 } else {
   void (async () => {
-    const snapshot = await readLatestSnapshot();
-    if (!snapshot) {
-      return;
+    try {
+      const snapshot = await readLatestSnapshot();
+      if (!snapshot) {
+        return;
+      }
+      await restoreFromSnapshot(snapshot);
+    } catch {
+      renderStatus("Saved checklist could not be restored. Build checklist again to continue.");
     }
-    await restoreFromSnapshot(snapshot);
   })();
 }
