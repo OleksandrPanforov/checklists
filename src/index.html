@@ -11,8 +11,8 @@
       <header class="hero">
         <div class="hero-header">
           <div class="hero-title">
-            <h1>Collection Checklist</h1>
-            <p>Offline tracker for your local collection images and names.</p>
+            <h1 data-i18n="Collection Checklist">Collection Checklist</h1>
+            <p data-i18n="Offline tracker for your local collection images and names.">Offline tracker for your local collection images and names.</p>
           </div>
           <select id="languageSelector" class="language-selector">
             <option value="en">English</option>
@@ -24,44 +24,45 @@
       <section class="panel controls">
         <div class="control-block">
           <div class="block-heading">
-            <h2>Collection Source</h2>
-            <p>Bring in your names and images, then generate the checklist grid.</p>
+            <h2 data-i18n="Collection Source">Collection Source</h2>
+            <p data-i18n="Bring in your names and images, then generate the checklist grid.">Bring in your names and images, then generate the checklist grid.</p>
           </div>
 
           <div class="field-group">
-            <label for="namesInput">Names list</label>
+            <label for="namesInput" data-i18n="Names list">Names list</label>
             <textarea
               id="namesInput"
               rows="6"
+              data-i18n-placeholder="One item name per line, or CSV-like values where the first value is used as name."
               placeholder="One item name per line, or CSV-like values where the first value is used as name."
             ></textarea>
             <div class="row file-row">
-              <label class="compact" for="namesFile">Load names file</label>
+              <label class="compact" for="namesFile" data-i18n="Load names file">Load names file</label>
               <input id="namesFile" type="file" accept=".txt,.csv,text/plain,text/csv" />
             </div>
           </div>
 
           <div class="field-group">
-            <label for="imagesInput">Images</label>
+            <label for="imagesInput" data-i18n="Images">Images</label>
             <input id="imagesInput" type="file" accept="image/*" multiple />
-            <p class="hint">
+            <p class="hint" data-i18n="Matching rule: filename (without extension) to item name. Remaining images are assigned by order.">
               Matching rule: filename (without extension) to item name. Remaining images are assigned by order.
             </p>
-            <label class="compact checkbox persist-toggle">
+            <label class="compact checkbox persist-toggle" data-i18n="IndexedDB mode (persist names, progress, and images)">
               <input id="indexedDbMode" type="checkbox" checked />
               IndexedDB mode (persist names, progress, and images)
             </label>
           </div>
 
           <div class="action-group">
-            <div class="action-group-title">Checklist Actions</div>
+            <div class="action-group-title" data-i18n="Checklist Actions">Checklist Actions</div>
             <div class="row actions action-grid">
-              <button id="buildBtn" type="button" class="tone-build">Build checklist</button>
-              <button id="clearBtn" type="button" class="tone-neutral">Clear</button>
-              <button id="resetProgressBtn" type="button" class="tone-warn">Reset progress</button>
-              <button id="deleteSavedBtn" type="button" class="tone-danger">Delete saved data</button>
-              <button id="exportProgressBtn" type="button" class="tone-sync">Export progress</button>
-              <label class="button tone-sync" for="importProgressInput">Import progress</label>
+              <button id="buildBtn" type="button" class="tone-build" data-i18n="Build checklist">Build checklist</button>
+              <button id="clearBtn" type="button" class="tone-neutral" data-i18n="Clear">Clear</button>
+              <button id="resetProgressBtn" type="button" class="tone-warn" data-i18n="Reset progress">Reset progress</button>
+              <button id="deleteSavedBtn" type="button" class="tone-danger" data-i18n="Delete saved data">Delete saved data</button>
+              <button id="exportProgressBtn" type="button" class="tone-sync" data-i18n="Export progress">Export progress</button>
+              <label class="button tone-sync" for="importProgressInput" data-i18n="Import progress">Import progress</label>
               <input id="importProgressInput" type="file" accept="application/json" hidden />
             </div>
           </div>
@@ -69,48 +70,50 @@
 
         <div class="control-block sync-block">
           <div class="block-heading">
-            <h2>Cloud Sync</h2>
-            <p>Optional manual sync using Supabase. Local tracking still works without it.</p>
+            <h2 data-i18n="Cloud Sync">Cloud Sync</h2>
+            <p data-i18n="Optional manual sync using Supabase. Local tracking still works without it.">Optional manual sync using Supabase. Local tracking still works without it.</p>
           </div>
 
           <div class="field-group">
             <div id="supabaseConfigSection" class="field-group">
-              <label for="supabaseUrlInput">Supabase project URL (optional sync)</label>
+              <label for="supabaseUrlInput" data-i18n="Supabase project URL (optional sync)">Supabase project URL (optional sync)</label>
               <input
                 id="supabaseUrlInput"
                 type="text"
+                data-i18n-placeholder="https://YOUR_PROJECT_ID.supabase.co"
                 placeholder="https://YOUR_PROJECT_ID.supabase.co"
               />
-              <label for="supabaseAnonKeyInput">Supabase anon key</label>
-              <input id="supabaseAnonKeyInput" type="text" placeholder="Paste your public anon key" />
-              <label for="supabaseSyncKeyInput">Sync key</label>
+              <label for="supabaseAnonKeyInput" data-i18n="Supabase anon key">Supabase anon key</label>
+              <input id="supabaseAnonKeyInput" type="text" data-i18n-placeholder="Paste your public anon key" placeholder="Paste your public anon key" />
+              <label for="supabaseSyncKeyInput" data-i18n="Sync key">Sync key</label>
               <input
                 id="supabaseSyncKeyInput"
                 type="text"
+                data-i18n-placeholder="Any long unique key you choose"
                 placeholder="Any long unique key you choose"
               />
             </div>
             <div id="supabaseAuthSection" class="field-group">
-              <label for="supabaseEmailInput">Supabase email</label>
-              <input id="supabaseEmailInput" type="email" placeholder="you@example.com" />
-              <label for="supabasePasswordInput">Supabase password</label>
-              <input id="supabasePasswordInput" type="password" placeholder="Account password" />
-              <p class="hint">
+              <label for="supabaseEmailInput" data-i18n="Supabase email">Supabase email</label>
+              <input id="supabaseEmailInput" type="email" data-i18n-placeholder="you@example.com" placeholder="you@example.com" />
+              <label for="supabasePasswordInput" data-i18n="Supabase password">Supabase password</label>
+              <input id="supabasePasswordInput" type="password" data-i18n-placeholder="Account password" placeholder="Account password" />
+              <p class="hint" data-i18n="Manual sync only. Nothing is uploaded unless you click Push to Supabase.">
                 Manual sync only. Nothing is uploaded unless you click Push to Supabase.
               </p>
               <div class="row actions action-grid auth-grid">
-                <button id="signUpSupabaseBtn" type="button" class="tone-auth-alt">Sign up</button>
-                <button id="signInSupabaseBtn" type="button" class="tone-auth">Sign in</button>
+                <button id="signUpSupabaseBtn" type="button" class="tone-auth-alt" data-i18n="Sign up">Sign up</button>
+                <button id="signInSupabaseBtn" type="button" class="tone-auth" data-i18n="Sign in">Sign in</button>
               </div>
             </div>
             <div id="supabaseConnectedSection" class="field-group hidden-section">
-              <div class="action-group-title">Connected Actions</div>
+              <div class="action-group-title" data-i18n="Connected Actions">Connected Actions</div>
               <div class="row actions action-grid sync-action-grid">
-                <button id="connectSupabaseBtn" type="button" class="tone-connect">Connect Supabase</button>
-                <button id="pushSupabaseBtn" type="button" class="tone-sync">Push to Supabase</button>
-                <button id="pullSupabaseBtn" type="button" class="tone-sync-alt">Pull from Supabase</button>
-                <button id="signOutSupabaseBtn" type="button" class="tone-neutral">Sign out</button>
-                <button id="disconnectSupabaseBtn" type="button" class="tone-danger">Disconnect Supabase</button>
+                <button id="connectSupabaseBtn" type="button" class="tone-connect" data-i18n="Connect Supabase">Connect Supabase</button>
+                <button id="pushSupabaseBtn" type="button" class="tone-sync" data-i18n="Push to Supabase">Push to Supabase</button>
+                <button id="pullSupabaseBtn" type="button" class="tone-sync-alt" data-i18n="Pull from Supabase">Pull from Supabase</button>
+                <button id="signOutSupabaseBtn" type="button" class="tone-neutral" data-i18n="Sign out">Sign out</button>
+                <button id="disconnectSupabaseBtn" type="button" class="tone-danger" data-i18n="Disconnect Supabase">Disconnect Supabase</button>
               </div>
             </div>
             <div class="status-stack">
@@ -124,8 +127,8 @@
       <section class="panel status-and-filter">
         <div class="status" id="statusText">No checklist loaded.</div>
         <div class="row filter-row">
-          <input id="searchInput" type="search" placeholder="Search by name" />
-          <label class="compact checkbox filter-toggle">
+          <input id="searchInput" type="search" data-i18n-placeholder="Search by name" placeholder="Search by name" />
+          <label class="compact checkbox filter-toggle" data-i18n="Show missing only">
             <input id="missingOnly" type="checkbox" />
             Show missing only
           </label>

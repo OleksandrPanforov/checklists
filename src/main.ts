@@ -137,67 +137,30 @@ function loadLanguagePreference(): Language {
 }
 
 function applyTranslations(): void {
-  // Update header
-  document.querySelector("h1")!.textContent = getTranslation("Collection Checklist");
-  document.querySelector(".hero p")!.textContent = getTranslation(
-    "Offline tracker for your local collection images and names."
-  );
-
-  // Update labels
-  const labels = document.querySelectorAll("label");
-  labels.forEach((label) => {
-    const text = label.textContent?.trim();
-    if (text) {
-      label.textContent = getTranslation(text);
+  document.querySelectorAll<HTMLElement>("[data-i18n]").forEach((el) => {
+    const key = el.getAttribute("data-i18n")!;
+    const translation = getTranslation(key);
+    // For elements that contain child elements (e.g., a label wrapping a checkbox),
+    // update only the last non-empty text node to preserve the child elements.
+    if (el.childElementCount > 0) {
+      const nodes = Array.from(el.childNodes);
+      for (let i = nodes.length - 1; i >= 0; i--) {
+        const node = nodes[i];
+        if (node.nodeType === Node.TEXT_NODE && node.textContent?.trim()) {
+          node.textContent = ` ${translation}`;
+          break;
+        }
+      }
+    } else {
+      el.textContent = translation;
     }
   });
 
-  // Update button texts
-  const buttons = document.querySelectorAll("button, .button");
-  buttons.forEach((btn) => {
-    const text = btn.textContent?.trim();
-    if (text) {
-      btn.textContent = getTranslation(text);
-    }
+  document.querySelectorAll<HTMLElement>("[data-i18n-placeholder]").forEach((el) => {
+    const key = el.getAttribute("data-i18n-placeholder")!;
+    el.setAttribute("placeholder", getTranslation(key));
   });
 
-  // Update headings
-  const headings = document.querySelectorAll("h2");
-  headings.forEach((heading) => {
-    const text = heading.textContent?.trim();
-    if (text) {
-      heading.textContent = getTranslation(text);
-    }
-  });
-
-  // Update paragraphs and hints
-  const paragraphs = document.querySelectorAll(".hint, .block-heading > p, .action-group-title");
-  paragraphs.forEach((para) => {
-    const text = para.textContent?.trim();
-    if (text && !text.includes("/")) {
-      para.textContent = getTranslation(text);
-    }
-  });
-
-  // Update placeholders and titles
-  const inputs = document.querySelectorAll("input[placeholder], textarea[placeholder]");
-  inputs.forEach((input) => {
-    const placeholder = input.getAttribute("placeholder");
-    if (placeholder) {
-      input.setAttribute("placeholder", getTranslation(placeholder));
-    }
-  });
-
-  // Update div action titles
-  const actionTitles = document.querySelectorAll(".action-group-title");
-  actionTitles.forEach((title) => {
-    const text = title.textContent?.trim();
-    if (text) {
-      title.textContent = getTranslation(text);
-    }
-  });
-
-  // Update language selector label
   languageSelector.value = currentLanguage;
 }
 
